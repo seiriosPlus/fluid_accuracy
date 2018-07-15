@@ -45,8 +45,9 @@ def parse_args():
     parser.add_argument(
         '--local',
         type=str2bool,
-        default=False,
-        help="whether to run as local mode.")
+        required=True,
+        help="standalone or cluster")
+
     return parser.parse_args()
 
 def get_place():
@@ -55,46 +56,27 @@ def get_place():
 
 
 def get_reader(word_dict):
-    if os.getenv("PADDLE_TRAINING_ROLE", None) == "PSERVER":
-        train_reader, test_reader = None, None
-        return train_reader, test_reader
-
     ## The training data set.
     #train_reader = paddle.batch(paddle.reader.shuffle(paddle.dataset.imdb.train(word_dict), buf_size=51200), batch_size=conf.batch_size)
+
     ## The testing data set.
     #test_reader = paddle.batch(paddle.reader.shuffle(paddle.dataset.imdb.test(word_dict), buf_size=51200), batch_size=conf.batch_size)
+
     #return train_reader, test_reader
 
     # The training data set.
     train_reader =  paddle.batch(paddle.dataset.imdb.train(word_dict), batch_size=conf.batch_size) 
+
     # The testing data set.
     test_reader = paddle.batch(paddle.dataset.imdb.test(word_dict), batch_size=conf.batch_size)
+
     return train_reader, test_reader
 
 def get_optimizer():
-    #optimizer = fluid.optimizer.SGD(learning_rate=conf.learning_rate)
+    optimizer = fluid.optimizer.SGD(learning_rate=conf.learning_rate)
     #optimizer = fluid.optimizer.Adagrad(learning_rate=conf.learning_rate)
-    optimizer = fluid.optimizer.AdamOptimizer(learning_rate=conf.learning_rate, beta1=0.9, beta2=0.999)
 
     return optimizer
-
-
-def inference_network(dict_dim):
-    data = fluid.layers.data(
-        name="words", shape=[1], dtype="int64", lod_level=1)
-    out = conv_net(data, dict_dim)
-    return out
-
-
-def train_network(dict_dim):
-    def true_nn():
-        out = inference_network(dict_dim)
-        label = fluid.layers.data(name='label', shape=[1], dtype='int64')
-        cost = fluid.layers.cross_entropy(input=out, label=label)
-        acc = fluid.layers.accuracy(input=out, label=label)
-        avg_cost = fluid.layers.mean(x=cost)
-        return [avg_cost, acc]
-    return true_nn
 
 
 def conv_net(
@@ -117,6 +99,26 @@ def conv_net(
     fc_0 = fluid.layers.fc(input=[conv_3], size=fc0_dim)
     prediction = fluid.layers.fc(input=[fc_0], size=class_dim, act="softmax")
     return prediction
+
+
+def inference_network(dict_dim):
+    data = fluid.layers.data(
+        name="words", shape=[1], dtype="int64", lod_level=1)
+    out = conv_net(data, dict_dim)
+    return out
+
+
+def train_network(dict_dim):
+    def true_nn():
+        out = inference_network(dict_dim)
+        label = fluid.layers.data(name='label', shape=[1], dtype='int64')
+        printed = fluid.layers.Print(input=out, print_phase='forward')
+        cost = fluid.layers.cross_entropy(input=printed, label=label)
+        acc = fluid.layers.accuracy(input=out, label=label)
+        avg_cost = fluid.layers.mean(x=cost)
+        return [avg_cost, acc]
+    return true_nn
+
 
 # Load the dictionary.
 def load_vocab(filename):
@@ -151,7 +153,7 @@ def train(dict_path):
     word_dict, dict_dim = get_worddict(dict_path)
     print("[get_worddict] The dictionary size is : %d" % dict_dim)
 
-    cfg = fluid.CheckpointConfig(checkpoint_dir="/accuracy/checkpoint/text_classification/adam", epoch_interval=1, step_interval=1)
+    cfg = fluid.CheckpointConfig(checkpoint_dir="/accuracy/text_classification/ckpt", epoch_interval=1, step_interval=1)
     #cfg = None
 
     trainer = fluid.Trainer(
@@ -194,6 +196,8 @@ def train(dict_path):
             t_losses.append(t_loss.mean())
             t_accuracies.append(t_accuracy.mean())
 
+            trainer.stop()
+
         if isinstance(event, fluid.EndEpochEvent):
             epoch_end_time = time.time()
             time_consuming = epoch_end_time-epoch_start_time
@@ -212,7 +216,13 @@ def train(dict_path):
                 np.array(t_losses).mean(),
                 np.array(t_accuracies).mean()))
 
-    train_reader, test_reader = get_reader(word_dict)
+    trainer.print_program("train")
+
+
+    if os.getenv("PADDLE_TRAINING_ROLE", None) == "PSERVER":
+        train_reader, test_reader = None, None
+    else:
+        train_reader, test_reader = get_reader(word_dict)
 
     trainer.train(reader=train_reader, num_epochs=conf.num_passes, event_handler=event_handler, feed_order=['words', 'label'])
 

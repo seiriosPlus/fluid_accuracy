@@ -1,0 +1,33 @@
+FROM paddlepaddle:env 
+
+RUN apt-get update -y
+RUN apt-get install -y libglib2.0-0
+RUN apt-get install -y libsm6
+RUN apt-get install -y vim
+RUN apt-get install -y telnet
+RUN apt-get install -y net-tools
+RUN apt-get install -y iputils-ping libgtk2.0-dev
+RUN apt-get install -y iftop
+RUN apt-get install -y python-pip 
+
+RUN https_proxy=http://172.19.32.166:9988 pip install -U kubernetes opencv-python
+RUN https_proxy=http://172.19.32.166:9988 pip install -U visualdl 
+
+ADD ./data/flowers /root/.cache/paddle/dataset/flowers
+ADD ./data/imdb    /root/.cache/paddle/dataset/imdb 
+
+RUN apt-get install -y git
+
+# below lines may change a lot for debugging
+ADD ./tools/paddle_k8s /usr/bin
+ADD ./tools/k8s_tools.py /root
+RUN chmod +x /usr/bin/paddle_k8s
+
+ADD *.cpu.whl /
+RUN pip install /*.cpu.whl && rm -f /*.cpu.whl
+
+env LD_LIBRARY_PATH $LD_LIBRARY_PATH:/usr/local/lib
+
+WORKDIR /accuracy
+
+CMD ["paddle", "version"]

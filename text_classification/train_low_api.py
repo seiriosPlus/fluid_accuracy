@@ -22,7 +22,8 @@ import paddle
 import paddle.fluid as fluid
 import paddle.fluid.profiler as profiler
 
-from config import text_classifacation_config as conf
+from config import standalone_config
+from config import cluster_config
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -46,6 +47,24 @@ def parse_args():
         default=False,
         help="whether to run as local mode.")
     return parser.parse_args()
+
+
+def get_reader(word_dict):
+
+    if os.getenv("PADDLE_TRAINING_ROLE", None) == "PSERVER":
+        return None, None
+
+    # The training data set.
+    train_reader =  paddle.batch(paddle.dataset.imdb.train(word_dict), batch_size=conf.batch_size)
+    # The testing data set.
+    test_reader = paddle.batch(paddle.dataset.imdb.test(word_dict), batch_size=conf.batch_size)
+    return train_reader, test_reader
+
+
+def get_optimizer():
+    optimizer = fluid.optimizer.SGD(learning_rate=conf.learning_rate)
+    #optimizer = fluid.optimizer.Adagrad(learning_rate=conf.learning_rate)
+    return optimizer
 
 
 # Define to_lodtensor function to process the sequential data.
@@ -114,8 +133,8 @@ def main(dict_path):
 
     data, label, prediction, avg_cost = conv_net(dict_dim)
 
-    sgd_optimizer = fluid.optimizer.SGD(learning_rate=conf.learning_rate)
-    optimize_ops, params_grads = sgd_optimizer.minimize(avg_cost)
+    optimizer = get_optimizer() 
+    optimize_ops, params_grads = optimizer.minimize(avg_cost)
 
     batch_size_var = fluid.layers.create_tensor(dtype='int64')
     batch_acc_var = fluid.layers.accuracy(input=prediction, label=label, total=batch_size_var)
@@ -125,10 +144,7 @@ def main(dict_path):
         inference_program = fluid.io.get_inference_program(target_vars=[batch_acc_var, batch_size_var])
 
     # The training data set.
-    train_reader = paddle.batch(paddle.reader.shuffle(paddle.dataset.imdb.train(word_dict), buf_size=51200), batch_size=conf.batch_size)
-
-    # The testing data set.
-    test_reader = paddle.batch(paddle.reader.shuffle(paddle.dataset.imdb.test(word_dict), buf_size=51200), batch_size=conf.batch_size)
+    train_reader, test_reader = get_reader()
 
     if conf.use_gpu:
         place = fluid.CUDAPlace(0)
@@ -219,6 +235,8 @@ def main(dict_path):
         else:
             print("environment var TRAINER_ROLE should be TRAINER os PSERVER")
 
+
 if __name__ == '__main__':
     args = parse_args()
+    conf = standalone_config if args.local else cluster_config
     main(args.dict_path)

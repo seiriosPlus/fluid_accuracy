@@ -8,11 +8,8 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 export PADDLE_PSERVER_PORTS=36001,36002
 export PADDLE_PSERVER_PORT_ARRAY=(36001 36002)
 export PADDLE_PSERVERS=2
-#export PADDLE_PSERVER_PORTS=36001
-#export PADDLE_PSERVER_PORT_ARRAY=(36001)
-#export PADDLE_PSERVERS=1
 export PADDLE_IP=127.0.0.1
-export PADDLE_TRAINERS=4
+export PADDLE_TRAINERS=2
 export PADDLE_SYNC_MODE="TRUE"
 export CPU_NUM=4
 
@@ -30,7 +27,7 @@ then
     do
         cur_port=${PADDLE_PSERVER_PORT_ARRAY[$i]}
         echo "PADDLE WILL START PSERVER "$cur_port
-        CUR_PORT=$cur_port PADDLE_TRAINER_ID=$i stdbuf -oL python train_high_api.py --dict_path /root/.cache/paddle/dataset/imdb/imdb.vocab --local 0 &> $BASE/pserver.$i.log &
+        CUR_PORT=$cur_port PADDLE_TRAINER_ID=$i stdbuf -oL python train_high_api.py --dict_path /root/.cache/paddle/dataset/imdb/imdb.vocab --local 0 &> $BASE/pserver.$i &
     done
 fi
 
@@ -43,6 +40,6 @@ then
     for((i=0;i<$PADDLE_TRAINERS;i++))
     do
         echo "PADDLE WILL START Trainer "$i
-        PADDLE_TRAINER_ID=$i stdbuf -oL python train_high_api.py --dict_path /root/.cache/paddle/dataset/imdb/imdb.vocab --local 0 &> $BASE/trainer.$i.log &
+        PADDLE_TRAINER_ID=$i stdbuf -oL python train_high_api.py --dict_path /root/.cache/paddle/dataset/imdb/imdb.vocab --local 0 &> $BASE/trainerlog.$i &
     done
 fi
