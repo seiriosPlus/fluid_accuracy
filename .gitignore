@@ -1,0 +1,30 @@
+*.DS_Store
+build/
+build_doc/
+*.user
+
+.vscode
+.idea
+.project
+.cproject
+.pydevproject
+.settings/
+Makefile
+.test_env/
+
+*~
+bazel-*
+
+# clion workspace.
+cmake-build-*
+
+# python
+*.pyc 
+*.whl
+
+#data 
+data/
+
+#log
+*.log
+checkpoint/
